@@ -2,15 +2,14 @@
 name = "dogcat"
 version = "0.1.0"
 description = ""
-authors = ["lillian tsai"]
+authors = ["Lillian Tsai"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-playwright = "^1.49.1"
-pytest-playwright = "^0.6.2"
-pytest-bdd = "^8.1.0"
 
+[tool.poetry.dev-dependencies]
+pytest = "^7.0"
 
 [build-system]
 requires = ["poetry-core"]

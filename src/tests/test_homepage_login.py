@@ -10,10 +10,11 @@ def test_login_with_email_password_caseid_1():
 def fill_email(page: Page, user):
     try:
         print("Debug: Trying to fill the email.")
+        page.get_by_placeholder("請輸入", exact=True).click()
         input_field = page.wait_for_selector('input[placeholder="請輸入"]', timeout=5000)
         input_field.click()
         input_field.fill(user['email'])
-        page.get_by_role("button", name="確認").click()
+        page.get_by_placeholder("請輸入", exact=True).press("Enter")
         print("Debug: Email filled and confirmed.")
     except Exception as e:
         print(f"Error while filling the email: {e}")
@@ -25,6 +26,7 @@ def choose_login_email_with_password(page: Page):
     
 @when("I fill the password")
 def fill_password(page: Page, user):
+    page.get_by_placeholder("請輸入", exact=True).click()
     page.locator("div").filter(has_text=re.compile(r"^輸入密碼$")).locator("div").first.click()
     page.get_by_placeholder("請輸入", exact=True).fill(user['password'])
     page.get_by_role("button", name="確認").click()
@@ -32,4 +34,6 @@ def fill_password(page: Page, user):
 
 @then("I can see the member center")
 def check_my_account(page: Page):
+    page.get_by_role("link", name="User").click()
+    page.wait_for_timeout(3000)
     assert page.get_by_role("link", name="會員中心").is_visible()
