@@ -7,6 +7,10 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.9"
+pytz = "^2024.2"
+playwright = "^1.49.1"
+pytest-playwright = "^0.6.2"
+pytest-bdd = "^8.1.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.0"
