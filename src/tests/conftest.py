@@ -1,3 +1,4 @@
+from twilio.rest import Client
 import pytest
 from playwright.sync_api import Page, expect, sync_playwright
 from pytest_bdd import given, parsers, scenario, then, when
@@ -9,6 +10,11 @@ import pytz
 import time
 from mailtm import get_mailtm_domains, login_to_mailtm
 import re
+import os
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv(dotenv_path="configs/.env")
 
 
 @pytest.fixture(scope="session")
@@ -53,12 +59,38 @@ def mailtm_headers():
     return {"Authorization": None}
 
 
+@given(parsers.parse("I have login type {login_type}"), target_fixture="login_type")
+def given_login_type(login_type) -> None:
+    return login_type
+
+
 @pytest.fixture
-def verification_code(mailtm_headers, sender_info):
+def verification_code(request, login_type, mailtm_headers):
     """
-    Fixture to fetch and store the verification code from Mail.tm.
+    Unified fixture to fetch the verification code based on the login type.
     """
-    return check_verification_code_in_5_minutes(mailtm_headers, sender_info)
+    print(f"Debug: login_type: {login_type}")
+
+    if login_type == "電子信箱":
+        sender_info = request.getfixturevalue("sender_info")
+        if not mailtm_headers or not sender_info:
+            raise ValueError(
+                "Missing mailtm_headers or sender_info for email verification.")
+        verification_code = check_verification_code_in_5_minutes(
+            mailtm_headers, sender_info)
+        return verification_code
+
+    elif login_type == "手機驗證":
+        # Dynamically get the `phone_info` fixture
+        phone_info = request.getfixturevalue("phone_info")
+        if not phone_info:
+            raise ValueError("Missing phone_info for mobile verification.")
+        print(f"Debug: phone_info: {phone_info}")
+        verification_code = check_phone_verification_code_in_5_minutes(
+            phone_info)
+        return verification_code
+    else:
+        raise ValueError(f"Invalid login_type: {login_type}")
 
 
 @given(parsers.parse("I am in {url} page"), target_fixture="url")
@@ -66,9 +98,36 @@ def given_url(url) -> None:
     return url
 
 
+BASE_URL = "https://api.mail.tm"
+
+
 @given(parsers.parse("I have homepage account: {email}, {password}"), target_fixture="user")
 def given_user(email, password):
     return dict(email=email, password=password)
+
+
+@given(parsers.parse('I have sender info {sender_email}, {sender_name}'), target_fixture="sender_info")
+def given_sender_info(sender_email, sender_name):
+    return dict(sender_email=sender_email, sender_name=sender_name)
+
+
+@given(parsers.parse("I have tm mail account info {email}, {password}"), target_fixture="mail_account")
+def given_mail_account(email, password):
+    return dict(email=email, password=password)
+
+
+@given(parsers.parse("I have phone number {region_code} {phone_number}"), target_fixture="phone_info")
+def given_phone_number(region_code=None, phone_number=None):
+    if not region_code or not phone_number:
+        raise ValueError(
+            "Invalid phone_info format. Ensure it contains region_code and phone_number."
+        )
+    phone_info = {
+        "region_code": region_code.strip(),
+        "phone_number": phone_number.strip()
+    }
+    print(f"Debug: Phone info parsed: {phone_info}")
+    return phone_info
 
 
 @when("I go to page")
@@ -108,19 +167,6 @@ def mailtm_generate_account(request):
     print(email_address)
 
 
-BASE_URL = "https://api.mail.tm"
-
-
-@given(parsers.parse('I have sender info {sender_email}, {sender_name}'), target_fixture="sender_info")
-def given_sender_info(sender_email, sender_name):
-    return dict(sender_email=sender_email, sender_name=sender_name)
-
-
-@given(parsers.parse("I have tm mail account info {email}, {password}"), target_fixture="mail_account")
-def given_mail_account(email, password):
-    return dict(email=email, password=password)
-
-
 @when('I login the mail tm')
 def mailtm_login(mail_account, mailtm_headers):
     """
@@ -130,6 +176,63 @@ def mailtm_login(mail_account, mailtm_headers):
                     mail_account['password'], mailtm_headers)
 
 
+@when(parsers.parse("I choose region"))
+def select_mobile_number_region(page: Page):
+    # Wait for the element using the XPath selector
+    button = page.locator(
+        'xpath=//*[@id="theme-provider"]/div/div/div/div[1]/div/div[1]')
+    # Ensure the element is visible before clicking
+    button.wait_for(state="visible", timeout=10000)
+    # Click the button
+    button.click()
+    page.wait_for_timeout(3000)
+    page.locator("//li[@data-option-index='1']").click()
+
+
+@when("I fill the email")
+def fill_email(page: Page, user):
+    try:
+        print("Debug: Trying to fill the email.")
+        page.get_by_placeholder("請輸入", exact=True).click()
+        input_field = page.wait_for_selector(
+            'input[placeholder="請輸入"]', timeout=5000)
+        input_field.click()
+        input_field.fill(user['email'])
+        page.get_by_placeholder("請輸入", exact=True).press("Enter")
+        print("Debug: Email filled and confirmed.")
+    except Exception as e:
+        print(f"Error while filling the email: {e}")
+
+
+@when("I fill the phone number")
+def fill_phone_number(page: Page, phone_info):
+    print(
+        f"Debug: Trying to fill the phone number: {phone_info['phone_number']}.")
+    page.get_by_placeholder("請輸入", exact=True).click()
+    input_field = page.wait_for_selector(
+        'input[placeholder="請輸入"]', timeout=5000)
+    input_field.click()
+    input_field.fill(phone_info['phone_number'])
+    page.get_by_placeholder("請輸入", exact=True).press("Enter")
+    print("Debug: Phone number filled and confirmed.")
+
+
+@when("I choose login with password")
+def choose_login_email_with_password(page: Page):
+    page.get_by_role("button", name="密碼登入").click()
+    page.wait_for_timeout(1000)
+
+
+@when("I fill the password")
+def fill_password(page: Page, user):
+    page.get_by_placeholder("請輸入", exact=True).click()
+    page.locator("div").filter(has_text=re.compile(
+        r"^輸入密碼$")).locator("div").first.click()
+    page.get_by_placeholder("請輸入", exact=True).fill(user['password'])
+    page.get_by_role("button", name="確認").click()
+    page.wait_for_timeout(3000)
+
+
 @when("I check the verification code in the email")
 def check_verification_code(verification_code):
     """
@@ -137,6 +240,55 @@ def check_verification_code(verification_code):
     """
     # Simply print or log the verification code for debugging purposes
     print("Verification Code Found:", verification_code)
+
+
+@when("I check the verification code in the mobile message box")
+def check_mobile_verification_code(verification_code):
+    """
+    Use the verification_code fixture to ensure the verification code is available.
+    """
+    # Simply print or log the verification code for debugging purposes
+    print("Verification Code Found:", verification_code)
+
+
+@when("I send the verification code in the page")
+def send_verification_code(page: Page, verification_code):
+    """
+    Input the verification code into the webpage.
+    """
+    # Debug: Print to confirm the type and value of verification_code
+    print(
+        f"Resolved verification_code: {verification_code}, type: {type(verification_code)}")
+    if callable(verification_code):
+        verification_code = verification_code()
+        print(f"After resolving callable: {verification_code}")
+    input_verification_code(page, verification_code)
+
+
+def input_verification_code(page, verification_code):
+    """
+    Input the verification code into the webpage's input fields.
+    """
+    # Wait for input fields to load
+    page.wait_for_selector("form input[type='tel']")
+
+    # Locate all input fields
+    input_elements = page.locator("form input[type='tel']").all()
+
+    # Debugging: Check input elements and verification code
+    print(f"Number of input elements found: {len(input_elements)}")
+    print(f"Verification Code: {verification_code}")
+
+    # Ensure input boxes and verification code are valid
+    if len(input_elements) != 6 or len(verification_code) != 6:
+        raise ValueError(
+            "Verification code must be 6 digits and there must be 6 input boxes."
+        )
+    # Fill each input box with the corresponding digit
+    for index, digit in enumerate(verification_code):
+        input_elements[index].fill(digit)
+    print(f"Finish Fill Verification Code: {verification_code}")
+    page.wait_for_timeout(5000)
 
 
 def check_verification_code_in_5_minutes(headers, sender_info):
@@ -219,9 +371,53 @@ def check_verification_code_in_5_minutes(headers, sender_info):
         pytest.fail("No verification code found.")
 
 
+def check_phone_verification_code_in_5_minutes(phone_info):
+    """
+    Fetch the most recent verification code from Twilio.
+    """
+    twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    twilio_auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+
+    if not twilio_account_sid or not twilio_auth_token:
+        raise ValueError("Twilio credentials are not configured correctly.")
+
+    client = Client(twilio_account_sid, twilio_auth_token)
+    current_time = datetime.utcnow()
+
+    print(f"Phone info received: {phone_info}")
+    region_code = phone_info.get("region_code", "")
+    phone_number = phone_info.get("phone_number", "")
+
+    messages = client.messages.list(
+        to=f"{region_code}{phone_number}",
+        date_sent_after=current_time - timedelta(minutes=5),
+        limit=10  # Search limit up to 10 messages
+    )
+
+    if not messages:
+        raise ValueError("No messages found in the last 5 minutes.")
+
+    for message in messages:
+        print(f"Message received: {message.body}")
+
+        match = re.search(r'\b\d{6}\b', message.body)
+        if match:
+            print(f"Verification code extracted: {match.group(0)}")
+            return match.group(0)
+
+    raise ValueError("No verification code found in messages.")
+
+
 @when(parsers.parse('I wait for {minutes:d} minutes'))
 def wait_for_minutes(page: Page, minutes: int):
     wait_time_ms = minutes * 60 * 1000
     print(f"Waiting for {minutes} minutes...")
     page.wait_for_timeout(wait_time_ms)
     print(f"Finished waiting for {minutes} minutes.")
+
+
+@then('I logout')
+def logout_homepage(page: Page):
+    page.get_by_role("link", name="User").click()
+    page.wait_for_timeout(3000)
+    page.get_by_role("link", name="登出").click()
