@@ -45,6 +45,40 @@ def fill_password(page: Page, user):
     page.wait_for_timeout(3000)
 
 
+@when("I send the verification code in the page")
+def send_verification_code(page: Page, verification_code):
+    """
+    Input the verification code into the webpage.
+    """
+    input_verification_code(page, verification_code)
+
+
+def input_verification_code(page, verification_code):
+    """
+    Input the verification code into the webpage's input fields.
+    """
+    # Wait for input fields to load
+    page.wait_for_selector("form input[type='tel']")
+
+    # Locate all input fields
+    input_elements = page.locator("form input[type='tel']").all()
+
+    # Debugging: Check input elements and verification code
+    print(f"Number of input elements found: {len(input_elements)}")
+    print(f"Verification Code: {verification_code}")
+
+    # Ensure input boxes and verification code are valid
+    if len(input_elements) != 6 or len(verification_code) != 6:
+        raise ValueError(
+            "Verification code must be 6 digits and there must be 6 input boxes.")
+
+    # Fill each input box with the corresponding digit
+    for index, digit in enumerate(verification_code):
+        input_elements[index].fill(digit)
+    print(f"Finish Fill Verification Code: {verification_code}")
+    page.wait_for_timeout(5000)
+
+
 @then("I can see the member center")
 def check_my_account(page: Page):
     page.get_by_role("link", name="User").click()

@@ -53,6 +53,14 @@ def mailtm_headers():
     return {"Authorization": None}
 
 
+@pytest.fixture
+def verification_code(mailtm_headers, sender_info):
+    """
+    Fixture to fetch and store the verification code from Mail.tm.
+    """
+    return check_verification_code_in_5_minutes(mailtm_headers, sender_info)
+
+
 @given(parsers.parse("I am in {url} page"), target_fixture="url")
 def given_url(url) -> None:
     return url
@@ -123,19 +131,12 @@ def mailtm_login(mail_account, mailtm_headers):
 
 
 @when("I check the verification code in the email")
-def check_verification_code(mailtm_headers, sender_info):
+def check_verification_code(verification_code):
     """
-    Check for the verification code in the latest email from the given sender.
+    Use the verification_code fixture to ensure the verification code is available.
     """
-    # Ensure `mailtm_headers` contains a valid token
-    headers = mailtm_headers
-    if headers["Authorization"] is None:
-        pytest.fail("No headers available. Ensure login is successful.")
-
-    verification_code = check_verification_code_in_5_minutes(
-        headers, sender_info)
+    # Simply print or log the verification code for debugging purposes
     print("Verification Code Found:", verification_code)
-    return verification_code
 
 
 def check_verification_code_in_5_minutes(headers, sender_info):
