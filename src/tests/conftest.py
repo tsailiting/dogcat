@@ -231,10 +231,11 @@ def fill_line_account_info(page: Page, user):
 
 @when("I fill the facebook account email and password")
 def fill_facebook_account_info(page: Page, user):
-    page.get_by_placeholder("Email or phone number").click()
-    page.get_by_placeholder("Email or phone number").fill(user['email'])
+    page.get_by_placeholder("Email address or phone number").click()
+    page.get_by_placeholder(
+        "Email address or phone number").fill(user['email'])
     page.wait_for_timeout(1000)
-    page.get_by_placeholder("Email or phone number").press("Tab")
+    page.get_by_placeholder("Email address or phone number").press("Tab")
     page.get_by_placeholder("Password").fill(user['password'])
     page.wait_for_timeout(1000)
     page.get_by_role("button", name="Log In").click()
