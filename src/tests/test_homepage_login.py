@@ -19,6 +19,16 @@ def test_login_with_phone_verification_code_caseid_12():
     pass
 
 
+@scenario('10.feature', 'I can login successfully with my line account')
+def test_login_with_sso_line_caseid_10():
+    pass
+
+
+@scenario('11.feature', 'I can login successfully with my facebook account')
+def test_login_with_sso_facebook_caseid_11():
+    pass
+
+
 @then("I can see the member center")
 def check_my_account(page: Page):
     page.get_by_role("link", name="User").click()

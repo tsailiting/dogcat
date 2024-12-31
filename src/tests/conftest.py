@@ -106,6 +106,16 @@ def given_user(email, password):
     return dict(email=email, password=password)
 
 
+@given(parsers.parse("I have line account: {email}, {password}"), target_fixture="user")
+def given_line_user(email, password):
+    return dict(email=email, password=password)
+
+
+@given(parsers.parse("I have facebook account: {email}, {password}"), target_fixture="user")
+def given_facebook_user(email, password):
+    return dict(email=email, password=password)
+
+
 @given(parsers.parse('I have sender info {sender_email}, {sender_name}'), target_fixture="sender_info")
 def given_sender_info(sender_email, sender_name):
     return dict(sender_email=sender_email, sender_name=sender_name)
@@ -152,7 +162,10 @@ def click_login_icon(page: Page):
 @when(parsers.parse("I choose login type {login_type}"))
 def choose_login_type(page: Page, login_type):
     print(f"Attempting to log in using {login_type}")  # Debug print
-    button_selector = f'role=button[name="使用 {login_type} 登入"]'
+    if login_type == "電子信箱":
+        button_selector = f'role=button[name="使用 {login_type} 登入"]'
+    else:
+        button_selector = f'role=button[name="使用 {login_type}登入"]'
     page.click(button_selector)
     page.wait_for_timeout(3000)
     print(f"Clicked on login button for {login_type}")  # Debug print
@@ -202,6 +215,36 @@ def fill_email(page: Page, user):
         print("Debug: Email filled and confirmed.")
     except Exception as e:
         print(f"Error while filling the email: {e}")
+
+
+@when("I fill the line account email and password")
+def fill_line_account_info(page: Page, user):
+    page.get_by_placeholder("Email address").click()
+    page.locator("input[name=\"tid\"]").fill(user['email'])
+    page.wait_for_timeout(1000)
+    page.get_by_placeholder("Password").click()
+    page.locator("input[name=\"tpasswd\"]").fill(user['password'])
+    page.wait_for_timeout(1000)
+    page.get_by_role("button", name="Log in").click()
+    page.wait_for_timeout(3000)
+
+
+@when("I fill the facebook account email and password")
+def fill_facebook_account_info(page: Page, user):
+    page.get_by_placeholder("Email or phone number").click()
+    page.get_by_placeholder("Email or phone number").fill(user['email'])
+    page.wait_for_timeout(1000)
+    page.get_by_placeholder("Email or phone number").press("Tab")
+    page.get_by_placeholder("Password").fill(user['password'])
+    page.wait_for_timeout(1000)
+    page.get_by_role("button", name="Log In").click()
+    page.wait_for_timeout(3000)
+
+
+@when(parsers.parse("I grant the facebook permission with {username}"))
+def grant_facebook_permission(page: Page, username):
+    page.get_by_label(f"以 {username} 的身分繼續").click()
+    page.wait_for_timeout(3000)
 
 
 @when("I fill the phone number")
