@@ -30,3 +30,14 @@ brew install --cask xquartz
 ```
 xhost +localhost
 ```
+## Execute
+Execute the playwright with pytest print out
+```
+pytest -s -m “login”
+```
+
+## TestRail integration
+Update test result to testrail
+```
+python testrail.py -run_id=<your_test_run_id>
+```

@@ -51,6 +51,11 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# cucumber BDD test input
+src/features/
+# pytest result and report
+results/
+
 # Translations
 *.mo
 *.pot
