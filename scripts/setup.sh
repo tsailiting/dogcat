@@ -24,10 +24,14 @@ log "Poetry installation complete."
 # Verify installation
 poetry --version
 
+log "Installing poetry shell"
+# ref: https://github.com/python-poetry/poetry-plugin-shell
+poetry self add poetry-plugin-shell
+
 log "Installing project dependencies with Poetry..."
 
 # Install project dependencies
-poetry install
+poetry install --no-root
 
 log "Installing playwright..."
 
