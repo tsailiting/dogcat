@@ -10,6 +10,8 @@ Enter poetry
 ```
 poetry shell
 ```
+For more commands for poetry, see https://python-poetry.org/docs/cli/
+
 Test Codegen, If all goes well, that should open two windows.
 ```
 playwright codegen google.com
