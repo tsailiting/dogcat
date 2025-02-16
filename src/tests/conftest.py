@@ -396,6 +396,8 @@ def check_verification_code_in_5_minutes(headers, sender_info):
     print('Verification mail URL is:', email_url)
 
     # Fetch the email content
+    print('GET', email_url)
+    print('header:', headers)
     response = requests.get(email_url, headers=headers)
     if response.status_code != 200:
         pytest.fail(
