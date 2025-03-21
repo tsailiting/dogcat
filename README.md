@@ -18,6 +18,21 @@ Including Login Modules with test cases:
 | Test Case Management    | TestRail 測試案例管理平台                   |
 | Automation Framework    | PlayWright 自動化測試框架                  |
 
+### 📧 Email & SMS Automation Setup
+
+1️⃣ Using Temp Mail API for Email Automation
+🔹 Utilizing [mail.tm API](https://mail.tm) to handle all email-related workflows efficiently.
+
+📌 **Temp Mail Preview:**
+![temp mail](https://github.com/tsailiting/dogcat/blob/main/images/temp_mail.png)
+
+---
+
+2️⃣ Using Twilio for SMS Automation
+🔹 Integrating [Twilio Programmable Messaging API](https://console.twilio.com/us1/monitor/logs/sms) to handle SMS operations.
+
+📌 **Twilio SMS Preview:**
+![temp sms](https://github.com/tsailiting/dogcat/blob/main/images/twilio.png)
 
 ## Set up
 ```
