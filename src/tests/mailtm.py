@@ -104,4 +104,4 @@ def login_to_mailtm(mail_account, mail_password, mailtm_headers):
         pytest.fail("Login failed: No token received.")
 
     mailtm_headers["Authorization"] = f"Bearer {token}"
-    print(f"Login successful. Token: {token}")
+    print(f"Mail.tm authentication token obtained. Token: {token}")

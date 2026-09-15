@@ -16,6 +16,8 @@ from dotenv import load_dotenv
 # Load .env file
 load_dotenv(dotenv_path="configs/.env")
 
+BASE_URL = "https://api.mail.tm"
+
 
 @pytest.fixture(scope="session")
 def playwright():
@@ -28,6 +30,7 @@ def browser():
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
+            # executable_path="/usr/bin/chromium",
             args=[
                 '--autoplay-policy=no-user-gesture-required',
                 '--disable-web-security',
@@ -40,8 +43,13 @@ def browser():
 
 @pytest.fixture(scope="session")
 def context(browser):
-    context = browser.new_context(permissions=['geolocation'])
+    context = browser.new_context(
+        permissions=["geolocation"]
+    )
+
     context.set_default_timeout(10000)
+    # context.on("response", log_response)
+
     yield context
     context.close()
 
@@ -49,11 +57,73 @@ def context(browser):
 @pytest.fixture(scope="session")
 def page(context):
     page = context.new_page()
+
+    # page.on(
+    #     "console",
+    #     lambda msg: print(
+    #         f"\n[BROWSER {msg.type.upper()}] "
+    #         f"{msg.text}"
+    #     )
+    # )
+
+    # page.on(
+    #     "requestfailed",
+    #     lambda request: print(
+    #         f"\n[REQUEST FAILED] "
+    #         f"{request.method} "
+    #         f"{request.url} "
+    #         f"{request.failure}"
+    #     )
+    # )
+
     yield page
     page.close()
 
 
+def log_response(response):
+    url = response.url.lower()
+
+    interesting_keywords = [
+        "dogcatstar",
+        "fortune",
+        "dni",
+        "login",
+        "verify",
+        "verification",
+        "captcha",
+        "recaptcha",
+        "token",
+        "otp",
+        "code",
+        "auth",
+    ]
+
+    if any(keyword in url for keyword in interesting_keywords):
+        print(
+            f"\n[RESPONSE] "
+            f"{response.status} "
+            f"{response.request.method} "
+            f"{response.url}"
+        )
+
+        try:
+            print(
+                "[REQUEST POST DATA]",
+                response.request.post_data
+            )
+        except Exception:
+            pass
+
+        try:
+            print(
+                "[RESPONSE BODY]",
+                response.text()[:3000]
+            )
+        except Exception:
+            pass
 # Fixture to store headers globally after login
+
+
 @pytest.fixture(scope="session")
 def mailtm_headers():
     return {"Authorization": None}
@@ -65,32 +135,36 @@ def given_login_type(login_type) -> None:
 
 
 @pytest.fixture
-def verification_code(request, login_type, mailtm_headers):
-    """
-    Unified fixture to fetch the verification code based on the login type.
-    """
+def previous_email():
+    return {"id": None}
+
+
+@pytest.fixture
+def verification_code(
+    request,
+    login_type,
+    mailtm_headers,
+    previous_email
+):
     print(f"Debug: login_type: {login_type}")
 
-    if login_type == "電子信箱":
+    if login_type == "Email":
         sender_info = request.getfixturevalue("sender_info")
-        if not mailtm_headers or not sender_info:
-            raise ValueError(
-                "Missing mailtm_headers or sender_info for email verification.")
-        verification_code = check_verification_code_in_5_minutes(
-            mailtm_headers, sender_info)
-        return verification_code
+
+        return wait_for_new_verification_code(
+            mailtm_headers,
+            sender_info,
+            previous_email["id"]
+        )
 
     elif login_type == "手機驗證":
-        # Dynamically get the `phone_info` fixture
         phone_info = request.getfixturevalue("phone_info")
-        if not phone_info:
-            raise ValueError("Missing phone_info for mobile verification.")
-        print(f"Debug: phone_info: {phone_info}")
-        verification_code = check_phone_verification_code_in_5_minutes(
-            phone_info)
-        return verification_code
-    else:
-        raise ValueError(f"Invalid login_type: {login_type}")
+
+        return check_phone_verification_code_in_5_minutes(
+            phone_info
+        )
+
+    raise ValueError(f"Invalid login_type: {login_type}")
 
 
 @given(parsers.parse("I am in {url} page"), target_fixture="url")
@@ -98,7 +172,103 @@ def given_url(url) -> None:
     return url
 
 
-BASE_URL = "https://api.mail.tm"
+def wait_for_new_verification_code(
+    headers,
+    sender_info,
+    previous_email_id=None,
+    timeout=60,
+    poll_interval=2
+):
+    messages_url = f"{BASE_URL}/messages"
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+
+        try:
+            response = requests.get(
+                messages_url,
+                headers=headers,
+                timeout=30,
+                verify=False
+            )
+            response.raise_for_status()
+        except RequestException as e:
+            pytest.fail(
+                f"Failed to fetch mail.tm messages: {e}"
+            )
+
+        messages = response.json().get("hydra:member", [])
+
+        matching_messages = [
+            message
+            for message in messages
+            if (
+                message.get("from", {}).get("name")
+                == sender_info["sender_name"]
+                and
+                message.get("from", {}).get("address")
+                == sender_info["sender_email"]
+            )
+        ]
+
+        if matching_messages:
+            matching_messages.sort(
+                key=lambda x: x["createdAt"],
+                reverse=True
+            )
+
+            latest_email = matching_messages[0]
+            latest_email_id = latest_email["id"]
+
+            print(
+                f"Latest email ID: {latest_email_id}, "
+                f"previous ID: {previous_email_id}"
+            )
+
+            # Case 1:
+            # 原本沒有 Email (previous_email_id = None)
+            # 現在有 Email -> 新信
+            #
+            # Case 2:
+            # 原本有 Email
+            # 現在 ID 不一樣 -> 新信
+            if latest_email_id != previous_email_id:
+
+                content = (
+                    f"{latest_email.get('subject', '')} "
+                    f"{latest_email.get('intro', '')}"
+                )
+
+                match = re.search(
+                    r"\b\d{6}\b",
+                    content
+                )
+
+                if match:
+                    verification_code = match.group(0)
+
+                    print(
+                        f"New verification email found: "
+                        f"{latest_email_id}"
+                    )
+                    print(
+                        f"Verification Code: "
+                        f"{verification_code}"
+                    )
+
+                    return verification_code
+
+        print(
+            f"No new verification email yet. "
+            f"Retrying in {poll_interval} seconds..."
+        )
+
+        time.sleep(poll_interval)
+
+    pytest.fail(
+        f"No new verification email received "
+        f"within {timeout} seconds."
+    )
 
 
 @given(parsers.parse("I have homepage account: {email}, {password}"), target_fixture="user")
@@ -161,14 +331,11 @@ def click_login_icon(page: Page):
 
 @when(parsers.parse("I choose login type {login_type}"))
 def choose_login_type(page: Page, login_type):
-    print(f"Attempting to log in using {login_type}")  # Debug print
-    if login_type == "電子信箱":
-        button_selector = f'role=button[name="使用 {login_type} 登入"]'
-    else:
-        button_selector = f'role=button[name="使用 {login_type}登入"]'
+    print(f"Debug: Attempting to log in using {login_type}")  # Debug print
+    button_selector = f'role=button[name="使用 {login_type} 登入"]'
     page.click(button_selector)
     page.wait_for_timeout(3000)
-    print(f"Clicked on login button for {login_type}")  # Debug print
+    print(f"Debug: Clicked on login button for {login_type}")  # Debug print
 
 
 @when('I generate mailtm account')
@@ -200,6 +367,53 @@ def select_mobile_number_region(page: Page):
     button.click()
     page.wait_for_timeout(3000)
     page.locator("//li[@data-option-index='1']").click()
+
+
+@when("I record the current latest verification email")
+def record_latest_verification_email(
+    mailtm_headers,
+    sender_info,
+    previous_email
+):
+    response = requests.get(
+        f"{BASE_URL}/messages",
+        headers=mailtm_headers,
+        timeout=30,
+        verify=False
+    )
+    response.raise_for_status()
+
+    messages = response.json().get("hydra:member", [])
+
+    matching_messages = [
+        message
+        for message in messages
+        if (
+            message.get("from", {}).get("name")
+            == sender_info["sender_name"]
+            and
+            message.get("from", {}).get("address")
+            == sender_info["sender_email"]
+        )
+    ]
+
+    # Inbox 沒有符合的 Email 是正常情況
+    if not matching_messages:
+        previous_email["id"] = None
+        print("No previous verification email found.")
+        return
+
+    matching_messages.sort(
+        key=lambda x: x["createdAt"],
+        reverse=True
+    )
+
+    previous_email["id"] = matching_messages[0]["id"]
+
+    print(
+        f"Previous verification email ID: "
+        f"{previous_email['id']}"
+    )
 
 
 @when("I fill the email")
@@ -333,86 +547,79 @@ def input_verification_code(page, verification_code):
     page.wait_for_timeout(5000)
 
 
-def check_verification_code_in_5_minutes(headers, sender_info):
+def get_latest_verification_code(headers, sender_info):
     """
-    Check the inbox for a verification code email from a specific sender within the last 5 minutes.
+    Get the latest verification email from the specified sender.
+    No time restriction.
     """
     messages_url = f"{BASE_URL}/messages"
-    try:
-        # Fetch messages
-        response = requests.get(
-            messages_url, headers=headers, timeout=30, verify=False)
-        response.raise_for_status()
 
+    try:
+        response = requests.get(
+            messages_url,
+            headers=headers,
+            timeout=30,
+            verify=False
+        )
+        response.raise_for_status()
     except RequestException as e:
         pytest.fail(f"An error occurred while fetching messages: {e}")
 
-    filtered_messages = []
-    if response.status_code == 200:
-        messages = json.loads(response.text)['hydra:member']
-        current_time = datetime.now().replace(tzinfo=pytz.utc)
-        sorted_messages = sorted(
-            messages,
-            key=lambda x: datetime.fromisoformat(
-                x['createdAt'].replace('Z', '+00:00')),
-            reverse=True
+    messages = response.json().get("hydra:member", [])
+
+    if not messages:
+        pytest.fail("No emails found in inbox.")
+
+    # Only keep emails from the expected sender
+    matching_messages = []
+
+    for message in messages:
+        sender = message.get("from") or {}
+
+        if (
+            sender.get("name") == sender_info["sender_name"]
+            and sender.get("address") == sender_info["sender_email"]
+        ):
+            matching_messages.append(message)
+
+    if not matching_messages:
+        pytest.fail(
+            f"No emails found from "
+            f"{sender_info['sender_name']} "
+            f"<{sender_info['sender_email']}>."
         )
 
-        # Filter messages from the last 5 minutes
-        for message in sorted_messages:
-            time.sleep(2)  # Optional delay for debugging
-            if all(key in message for key in ('createdAt', 'from', 'subject')):
-                received_time = datetime.fromisoformat(
-                    message['createdAt'].replace('Z', '+00:00'))
-                time_n_minutes_ago = current_time - timedelta(minutes=5)
-
-                if received_time > time_n_minutes_ago:
-                    if 'from' in message and len(message['from']) > 0:
-                        if (message['from']['name'] == sender_info['sender_name'] and
-                                message['from']['address'] == sender_info['sender_email']):
-                            filtered_messages.append(message)
-                            print(
-                                f"Verification code email found: {message['id']}")
-                    else:
-                        pytest.fail("The 'from' field is missing or empty.")
-            else:
-                pytest.fail(
-                    "One of the required fields is missing in the message.")
-
-        if not filtered_messages:
-            pytest.fail(f"No matching emails found in the last {5} minutes.")
-    else:
-        pytest.fail(
-            f"Failed to fetch emails. Status code: {response.status_code}")
-
-    # Sort and select the most recent matched mail
-    filtered_messages.sort(
+    # Sort by createdAt, newest first
+    matching_messages.sort(
         key=lambda x: datetime.fromisoformat(
-            x['createdAt'].replace('Z', '+00:00')),
+            x["createdAt"].replace("Z", "+00:00")
+        ),
         reverse=True
     )
-    email_id = filtered_messages[0]['id']
-    email_url = f"{BASE_URL}/messages/{email_id}"
-    print('Verification mail URL is:', email_url)
 
-    # Fetch the email content
-    print('GET', email_url)
-    print('header:', headers)
-    response = requests.get(email_url, headers=headers)
-    if response.status_code != 200:
-        pytest.fail(
-            f"Failed to fetch email. Status code: {response.status_code}")
+    # Get latest email
+    latest_email = matching_messages[0]
 
-    verification_email_html = response.json().get('text', '')
+    print("Latest verification email:")
+    print("ID:", latest_email["id"])
+    print("Subject:", latest_email.get("subject"))
+    print("Created At:", latest_email.get("createdAt"))
 
-    # Extract the verification code using regex
-    match = re.search(r'\b\d{6}\b', verification_email_html)
+    # The response already contains subject + intro,
+    # so we can extract the verification code directly.
+    content = (
+        f"{latest_email.get('subject', '')} "
+        f"{latest_email.get('intro', '')}"
+    )
+
+    match = re.search(r"\b\d{6}\b", content)
+
     if match:
         verification_code = match.group(0)
         print("Verification Code:", verification_code)
         return verification_code
-    else:
-        pytest.fail("No verification code found.")
+
+    pytest.fail("No 6-digit verification code found in the latest email.")
 
 
 def check_phone_verification_code_in_5_minutes(phone_info):
@@ -462,6 +669,5 @@ def wait_for_minutes(page: Page, minutes: int):
 
 @then('I logout')
 def logout_homepage(page: Page):
-    page.get_by_role("link", name="User").click()
-    page.wait_for_timeout(3000)
-    page.get_by_role("link", name="登出").click()
+    # Duplicate "登出" nodes exist (e.g. desktop/mobile menus); only one is visible.
+    page.get_by_text("登出", exact=True).locator("visible=true").click()

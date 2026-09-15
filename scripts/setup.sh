@@ -25,6 +25,7 @@ log "Poetry installation complete."
 poetry --version
 
 log "Installing poetry shell"
+poetry config keyring.enabled false
 # ref: https://github.com/python-poetry/poetry-plugin-shell
 poetry self add poetry-plugin-shell
 
@@ -44,3 +45,15 @@ poetry run playwright install-deps
 poetry add pytest-bdd
 
 log "Project setup complete!"
+
+echo "Installing system dependencies..."
+
+sudo apt-get update
+
+sudo apt-get install -y \
+
+    chromium
+
+echo "Chromium:"
+
+chromium --version
